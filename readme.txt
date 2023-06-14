@@ -22,3 +22,20 @@ C. a rule of thumb
 lattice spacing / time stepsize ~ O(0.01)
 
 
+* Packages used 
+SparseArrays
+JSON
+InteractiveUtils
+Serialization
+Plots
+FFTW
+Printf
+
+* To install julia packages
+using Pkg
+Pkg.add("Package Name")
+
+
+
+
+

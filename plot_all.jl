@@ -1,5 +1,6 @@
 include("./src/utils.jl")
 using Plots
+using Printf
 if length(ARGS) < 1 
     error("Please specify the data directory")
 end
@@ -21,7 +22,7 @@ anim = @animate while !is_eod(dl)
     ylims!(p1,0,y_max)
     kx,ky,s_2d = get_structure_factor(rho,nx,ny,x_max,y_max)
     # plot the struture factor
-    p2 = heatmap(kx,ky,s_2d',aspect_ratio=:equal,tellheight=true,interpolate=true,title="S(x,y)")
+    p2 = heatmap(kx,ky,s_2d',aspect_ratio=:equal,tellheight=true,interpolate=true,title="S(kx,ky)")
     xlims!(p2,kx[1],kx[end])
     ylims!(p2,kx[1],ky[end])
 

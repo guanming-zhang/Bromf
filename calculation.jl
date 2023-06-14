@@ -25,14 +25,14 @@ set_model_params(model,T,A,B,C,Gamma)
 if input_data["iv"] == "Gaussian-profile"
     x = model.x
     y = model.y'
-    sx = input_data["iv_sx"]
-    sy = input_data["iv_sy"]
-    a = 1.0/(pi*sx*sy)
-    rho0 = @. exp(-((x-0.5*x_max)/sx)^2 -((y-0.5*y_max)/sy)^2)
-elseif input_data["iv"] == "random-Normal"
+    sx2 = input_data["iv_sx"]^2
+    sy2 = input_data["iv_sy"]^2
+    a = 1.0/(pi*input_data["iv_sx"]*input_data["iv_sy"])
+    rho0 = @. a*exp(-((x-0.5*x_max)/sx2)^2 -((y-0.5*y_max)/sy2)^2)
+elseif input_data["iv"] == "random-normal"
     sr = input_data["iv_srho"]
     mu = 1.0/(x_max*y_max)
-    rho0 = rand(Normal(mu, sr), nx,ny)
+    rho0 = rand(Normal(mu, sr*mu), nx,ny)
 end
 set_initial_condition(model,rho0)
 println("$(model.step_counter)")
