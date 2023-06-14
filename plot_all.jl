@@ -1,6 +1,9 @@
 include("./src/utils.jl")
 using Plots
-data_dir = "../mean_field_model/data"
+if length(ARGS) < 1 
+    error("Please specify the data directory")
+end
+data_dir = ARGS[1] 
 dl = DataLoader(data_dir)
 x_max,y_max = dl.info["range"][1],dl.info["range"][2]
 delta_x = dl.info["range"][1] / dl.info["npts"][1]

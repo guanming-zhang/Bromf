@@ -1,7 +1,10 @@
 include("./src/utils.jl")
 using Plots
 using Printf
-data_dir = "../mean_field_model/data"
+if length(ARGS) < 1 
+    error("Please specify the data directory")
+end
+data_dir = ARGS[1] 
 dl = DataLoader(data_dir)
 x_max,y_max = dl.info["range"][1],dl.info["range"][2]
 delta_x = dl.info["range"][1] / dl.info["npts"][1]
@@ -18,5 +21,5 @@ anim = @animate while !is_eod(dl)
     xlims!(0,x_max)
     ylims!(0,y_max)
 end
-mp4(anim, joinpath(data_dir,"density.gif"))
+mp4(anim, joinpath(data_dir,"density.mp4"))
 

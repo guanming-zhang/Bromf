@@ -2,8 +2,10 @@ include("./src/mean_field_model.jl")
 include("./src/utils.jl")
 using Random, Distributions
 using Printf
-#input_data = read_input(ARGS[1])
-data_dir = "../mean_field_model/data"
+if length(ARGS) < 1 
+    error("Please specify the data directory containing input.json ")
+end
+data_dir = ARGS[1] 
 input_data = read_input(Base.joinpath(data_dir,"input.json"))
 x_max,y_max = input_data["range"]
 nx,ny = input_data["npts"]
@@ -38,7 +40,7 @@ save_data(model,data_dir,true)
 
 for s in range(0,input_data["n_steps"])
     if mod(s,input_data["n_save"]) == 0
-        @printf("The current time steps number: %i \n", s)
+        @printf("The current time step number: %i \n", s)
         if any(isnan, model.rho)
             error("NaN detected, program stops")
         end
