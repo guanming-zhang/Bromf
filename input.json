@@ -1,0 +1,19 @@
+{
+  "range": [100.0,100.0],
+  "npts": [256,256],
+  "dt": 0.001,
+  "time_scheme": "predictor-corrector",
+  "n_steps": 10000,
+  "n_save": 200,
+  "bc": "periodic",
+  "iv": "Gaussian-profile",
+  "iv_sx": 10.0,
+  "iv_sy": 10.0,
+  "T": 0.3,
+  "A": 0.1,
+  "B": 0.0,
+  "C": 0.0,
+  "K":0.1,
+  "Gamma": 1.0,
+  "compression": 1
+}
