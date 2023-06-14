@@ -79,23 +79,25 @@ function get_radial_structure_factor(kx,ky,s_rho,n_bins=0)
     delta_k = k_max/n_bins
     dA = (kx[2]-kx[1])*(ky[2]-ky[1])
     s_k = zeros(Float64,n_bins)
+    bin_count = zeros(Float64,n_bins)
     for i in 1:nx
         for j in 1:ny
             k = sqrt(kx[i]*kx[i] + ky[j]*ky[j])
             bin_num = trunc(Int,k/delta_k) + 1
             if bin_num <= n_bins
                 s_k[bin_num] += s_rho[i,j]*dA
+                bin_count[bin_num] += 1.0
             end
         end
     end
     for b in 1:n_bins
         k = delta_k*0.5 + delta_k*(b-1)
         area = 2.0*pi*k*delta_k
-        s_k[b] /= area
+        s_k[b] /= bin_count[b]
     end
     k = collect(0.5*delta_k:delta_k:k_max)
-    println(size(k))
-    s_k /= s_k[end]
+    #s_k /= s_k[end]
+    s_k[1] = 0.0
     return (k,s_k)
 end
 
@@ -121,7 +123,7 @@ function get_radial_cross_corr(rho,nx,ny,Lx,Ly,n_bins = 0)
             r = sqrt(x^2 + y^2)
             bin_num = trunc(Int,r/dr) + 1
             if bin_num <= n_bins
-                radial_corr[bin_num] += corr[ix,iy]*dx*dy
+                radial_corr[bin_num] += corr[ix,iy]
                 bin_count[bin_num] += 1.0
             end
         end
