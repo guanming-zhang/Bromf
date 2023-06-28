@@ -62,6 +62,7 @@ function get_structure_factor(rho,nx,ny,Lx,Ly)
     if ndims(rho) == 1
         rho = reshape(rho,(nx,ny))
     end
+    rho = rho .- sum(rho)/(nx*ny) # remove the DC component
     f_rho = fftshift(fft(rho))
     s_rho = real(f_rho.*conj(f_rho))
     kx = fftshift(fftfreq(nx,nx))*2.0*pi/Lx
@@ -93,11 +94,9 @@ function get_radial_structure_factor(kx,ky,s_rho,n_bins=0)
     for b in 1:n_bins
         k = delta_k*0.5 + delta_k*(b-1)
         area = 2.0*pi*k*delta_k
-        s_k[b] /= bin_count[b]
+        s_k[b] /= area
     end
     k = collect(0.5*delta_k:delta_k:k_max)
-    #s_k /= s_k[end]
-    s_k[1] = 0.0
     return (k,s_k)
 end
 
@@ -105,6 +104,7 @@ function get_radial_cross_corr(rho,nx,ny,Lx,Ly,n_bins = 0)
     if ndims(rho) == 1
         rho = reshape(rho,(nx,ny))
     end
+    rho = rho .- sum(rho)/(nx*ny) # remove the average value
     f_rho = fft(rho)
     corr = real(ifft(f_rho.*conj(f_rho)))
     r_max = 0.5*sqrt(Lx*Ly)
@@ -131,7 +131,7 @@ function get_radial_cross_corr(rho,nx,ny,Lx,Ly,n_bins = 0)
     for b in 1:n_bins
         r = dr*0.5 + dr*(b-1)
         area = 2.0*pi*r*dr
-        radial_corr[b] /= bin_count[b] #/= area
+        radial_corr[b] /= area
     end
     r = collect(0.5*dr:dr:r_max)
     #nomarlisation

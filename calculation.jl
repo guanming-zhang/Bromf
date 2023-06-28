@@ -11,7 +11,47 @@ x_max,y_max = input_data["range"]
 nx,ny = input_data["npts"]
 dt = input_data["dt"]
 #model parameters
-T = input_data["T"]
+if haskey(input_data,"phi") && haskey(input_data,"R") 
+    error("Please do not specify phi and R at the same time")
+end
+if haskey(input_data,"rel_epsilon") && haskey(input_data,"phi") 
+    S = 2.0*pi
+    R = sqrt(input_data["phi"]*x_max*y_max/(input_data["N"]*pi))
+    eps = input_data["rel_epsilon"]*2.0*R
+    input_data["A"] = S*R^2
+    input_data["B"] = 0.0
+    input_data["C"] = eps*S/24.0*R^4
+    input_data["K"] = S*5.0/24.0*R^4
+    input_data["Gamma"] = 1.0/eps
+    println("A,B,C,Gamma are overwriten and adjusted based on the vaule of phi and epsilon")
+    # overwrite the old input file
+    file_path = Base.joinpath(data_dir,"input.json")
+    open(file_path, "w") do f
+        write(f,JSON.json(input_data,4))
+    end
+    println(R)
+end
+
+if haskey(input_data,"rel_epsilon") && haskey(input_data,"R") 
+    S = 2.0*pi
+    R = input_data["R"]
+    eps = input_data["rel_epsilon"]*2.0*R
+    input_data["A"] = S*R^2
+    input_data["B"] = 0.0
+    input_data["C"] = eps*S/24.0*R^4
+    input_data["K"] = S*5.0/24.0*R^4
+    input_data["Gamma"] = 1.0/eps
+    input_data["R"] = R
+    println("A,B,C,Gamma are overwriten and adjusted based on the vaule of R and epsilon")
+    # overwrite the old input file
+    file_path = Base.joinpath(data_dir,"input.json")
+    open(file_path, "w") do f
+        write(f,JSON.json(input_data,4))
+    end
+    println(R)
+end
+
+T = input_data["T"] 
 A = input_data["A"]
 B = input_data["B"]
 C = input_data["C"]
@@ -27,18 +67,18 @@ if input_data["iv"] == "Gaussian-profile"
     y = model.y'
     sx = input_data["iv_sx"]
     sy  = input_data["iv_sy"]
-    a = 1.0/(pi*sx*sy)
+    a = 1.0/(pi*sx*sy)*input_data["N"]
     rho0 = @. a*exp(-((x-0.5*x_max)/sx)^2 -((y-0.5*y_max)/sy)^2)
 elseif input_data["iv"] == "random-normal"
     sr = input_data["iv_srho"]
-    mu = 1.0/(x_max*y_max)
+    mu = input_data["N"]/(x_max*y_max)
     rho0 = rand(Normal(mu, sr*mu), nx,ny)
 end
 set_initial_condition(model,rho0)
 println("$(model.step_counter)")
 save_data(model,data_dir,true)
 
-for s in range(0,input_data["n_steps"])
+for s in 0:input_data["n_steps"]
     if mod(s,input_data["n_save"]) == 0
         @printf("The current time step number: %i \n", s)
         if any(isnan, model.rho)

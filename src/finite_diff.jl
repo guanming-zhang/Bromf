@@ -28,7 +28,7 @@ function diff_mat2d(nx,ny,along,odiff)
     diff_mat = spzeros(Float64, N, N)
     stencil_ind =  Array{Int64,1}(undef,5)
     for i in 1:nx
-        for j in 1:ny
+        for j in 1:ny   
             if along == 1 
                 stencil_ind[3] = i + (j-1)*nx                  # center
                 stencil_ind[2] = mod_idx(i - 1, nx) + (j-1)*nx # left one
