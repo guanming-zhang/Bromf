@@ -4,6 +4,7 @@ using JSON
 using Serialization
 using InteractiveUtils
 using Base.Threads
+using DifferentialEquations
 
 include("finite_diff.jl")
 
@@ -36,6 +37,8 @@ mutable struct NumericalMeanField2D
     # flag variables
     is_initialized::Bool          # a flag showing if the initial condition is set
     is_parameters_set::Bool       # a flag showing if the parameters are set 
+    # Julia integrator(initilaized as nothing)
+    integrator::Any                 
 end
 
 function NumericalMeanField2D(x_max, y_max, nx, ny, dt, t_scheme="forward-Euler")
@@ -50,8 +53,8 @@ function NumericalMeanField2D(x_max, y_max, nx, ny, dt, t_scheme="forward-Euler"
     if mod(npts[1]*npts[2],num_th) != 0
         error("the number of points must be divisible by the number of thread")
     end
-    x = range(delta[1], x_max, nx)
-    y = range(delta[2], y_max, ny)
+    x = range(delta[1], x_max;length = nx)
+    y = range(delta[2], y_max;length = ny)
     #=
     Dx = diff_mat2D(nx, ny, 1, 1) / delta[1]
     Dy = diff_mat2D(nx, ny, 2, 1) / delta[2]
@@ -82,7 +85,7 @@ function NumericalMeanField2D(x_max, y_max, nx, ny, dt, t_scheme="forward-Euler"
     drho_store = zeros(Float64, nx * ny)
 
     NumericalMeanField2D(rng, npts, delta, time_scheme, params, dt, step_counter, num_th, pts_per_th,
-        x, y,block_cdiff_mat, rho, drho, sigma, mu, j, f, rho_store, drho_store,false,false)
+        x, y,block_cdiff_mat, rho, drho, sigma, mu, j, f, rho_store, drho_store,false,false,nothing)
 end
 
 
@@ -100,6 +103,14 @@ function set_initial_condition(model::NumericalMeanField2D, rho::Array{Float64,2
     model.rho = reshape(rho, model.npts[1] * model.npts[2])
     model.rho_store = reshape(rho, model.npts[1] * model.npts[2])
     model.step_counter = 0
+    prob = ODEProblem(wrapped_update!,model.rho,(0.0,1.0),model)
+    if model.time_scheme == "julia-Tsit5"
+        model.integrator = init(prob,Tsit5())
+    elseif model.time_scheme == "julia-RK4"
+        model.integrator = init(prob,RK4())
+    elseif model.time_scheme =="julia-TRBDF2"
+        model.integrator = init(prob,TRBDF2()) 
+    end
     model.is_initialized = true
 end
 
@@ -166,8 +177,22 @@ function update_drho_parallel!(model::NumericalMeanField2D,npts_per_th,th_num)
     end
 end
 
+function wrapped_update!(drho,rho,model,t)
+    """
+    we wrap the update_drho_parallel function to make it compatable to Julia ODE solver
+    which is of the form du/dt = f(du,u,p,t) where u is the unknown, p is the parameter
+    in our case we update drho/dt = wrapped_update(drhorho,model,t) where we use the model as
+    the parameter
+    """
+    model.rho = rho
+    Threads.@threads for th_num in 1:model.num_th
+        update_drho_parallel!(model,model.pts_per_th,th_num)
+    end
+    drho .= model.drho
+end
 
-function forward(model::NumericalMeanField2D)
+
+function one_step(model::NumericalMeanField2D)
     if !model.is_initialized
         error("Please set the initialcondition before fowarding in time")
     elseif !model.is_parameters_set
@@ -184,15 +209,47 @@ function forward(model::NumericalMeanField2D)
             update_drho_parallel!(model,model.pts_per_th,th_num)
         end
         model.rho = model.rho_store + 0.5 * model.dt * (model.drho + model.drho_store)
+    elseif model.time_scheme == "RK2"
+        model.rho_store = copy(model.rho)
+        # calclate k1 and update rho_new
+        Threads.@threads for th_num in 1:model.num_th
+            update_drho_parallel!(model,model.pts_per_th,th_num)
+        end
+        k1 = model.dt*model.drho
+        # calclate k2 and update rho_new
+        model.rho = model.rho_store + k1
+        Threads.@threads for th_num in 1:model.num_th
+            update_drho_parallel!(model,model.pts_per_th,th_num)
+        end
+        k2 = model.dt*model.drho
+        model.rho = model.rho_store + 0.5*(k1 + k2)
     elseif model.time_scheme == "forward-Euler"
         Threads.@threads for th_num in 1:model.num_th
             update_drho_parallel!(model,model.pts_per_th,th_num)
         end
         model.rho += model.drho * model.dt
     else
-        error("time-scheme not defined")
+        error("one_step() only works for time-scheme = 
+        [predictor-corrector, forward-Euler, RK2]")
     end
     model.step_counter += 1
+end
+
+function n_steps(model::NumericalMeanField2D,n)
+    if !model.is_initialized
+        error("Please set the initialcondition before fowarding in time")
+    elseif !model.is_parameters_set
+        error("Please specify the value of model prameters before fowarding in time")
+    end
+
+    if model.time_scheme in ["julia-Tsit5","julia-TRBDF2","julia-RK4"]
+        step!(model.integrator,n*model.dt,true)
+        model.rho = model.integrator.u
+    else 
+        error("n_steps() only works for time-scheme = 
+              [julia-Tsit5, julia-TRBDF2, julia-RK4]")
+    end
+    model.step_counter += n
 end
 
 function save_data(model::NumericalMeanField2D, dir_str::String,compression::Bool)
@@ -223,7 +280,8 @@ end
 #############--------some notes--------############
 # Try not to use boradcasting(.*) on sparse matrices
 # or you will get an out-of-memory error in julia
-#
+# Try not using indexing on sparse matrices since 
+# it is very slow
 ###################################################
 
 # unparalleled update function 
@@ -275,88 +333,3 @@ function update_drho!(model::NumericalMeanField2D)
     end
 end
 =#
-
-
-
-####-----This section is for testing ------#####
-#=
-using Printf
-
-x_max = y_max = 2.0*pi
-nx = ny = 256
-N = nx*ny
-dt = 0.01
-T = 0.1
-A = 0.1
-B = 0.01
-C = 0.01
-K = 0.01
-Gamma = 1.0
-
-model = NumericalMeanField2D(x_max, y_max, nx, ny, dt)
-
-
-set_model_params(model, T, A, B, C, K)
-x = model.x
-y = model.y'
-rho = @. sin(x) * cos(2.0 * y)
-rho_dx = @. cos(x) * cos(2.0 * y)
-rho_dy = @. -2.0 * sin(x) * sin(2.0 * y)
-
-rho_dxy = @. -2.0 * cos(x) * sin(2.0 * y)
-rho_dxx = @. -sin(x) * cos(2.0 * y)
-rho_dyy = @. -4.0 * sin(x) * cos(2.0 * y)
-mu = @. -2.0*A * rho + 3.0*B * rho^ 2 - 2.0*K * (-5.0 * sin(x) * cos(2.0 * y))
-
-j = zeros(Float64, 2, nx, ny)
-j[1, :, :] = @. rho * (-2.0*A * rho_dx + 6.0 * B * rho * rho_dx - 2.0*K * (-5.0 * cos(x) * cos(2.0 * y))) + T*rho_dx
-j[2, :, :] = @. rho * (-2.0*A * rho_dy + 6.0 * B * rho * rho_dy - 2.0*K * (10.0 * sin(x) * sin(2.0 * y))) + T*rho_dy
-f = zeros(Float64, 2, nx, ny)
-
-#sigma_xx = @. -C*(sin(x) * cos(2.0 * y))^2
-#sigma_xy = @. -C*0.5 * sin(2.0 * x) * sin(4.0 * yprintln(rho))
-#sigma_yy = @. -C*4.0 * (sin(x) * cos(2.0 * y))^2
-
-f = zeros(Float64, 2, nx, ny)
-f[1, :, :] = @. C*(-sin(2.0 * x) * (cos(2.0 * y)^2) - 2.0 * sin(2.0 * x) * cos(4.0 * y))
-f[2, :, :] = @. C*(-cos(2.0 * x)* sin(4.0 * y) + 8.0 * sin(x)^2 * sin(4.0 * y))
-
-set_initial_condition(model,rho)
-@time begin
-for i in 1:4000
-pts_per_thread = div(model.npts[1] * model.npts[2],model.num_th)
-if mod(model.npts[1]*model.npts[2],model.num_th) == 0
-    Threads.@threads for th_num in 1:model.num_th
-        #update_drho_parallel!(model,pts_per_thread,th_num)
-        model.rho[1:div(256*256,1)] 
-    end
-else
-    error("the number of points must be divisible by the number of thread")
-end
-end
-end
-
-rho_fd = reshape(model.rho,nx,ny)
-rmse = sqrt(1.0/N*sum((rho_fd - rho).^2))
-@printf("RMSE for rho is %1.8f \n",rmse)
-
-# rmse of mu
-mu_fd = reshape(model.mu,nx,ny)
-rmse_mu = sqrt(1.0/N*sum((mu_fd - mu).^2))
-@printf("RMSE for mu is %1.8f \n",rmse_mu)
-
-# rmse of j
-for alpha in 1:2
-    j_fd = reshape(model.j[alpha, :, :],(nx,ny))
-    rmse_j = sqrt(1.0/N*sum((j_fd - j[alpha, :, :]).^2))
-    @printf("RMSE for the %i th component of flux, j, is %1.8f \n",alpha,rmse_j)
-end
-
-# rmse of f
-for alpha in 1:2
-    f_fd = reshape(model.f[alpha, :, :],(nx,ny))
-    rmse_f = sqrt(1.0/N*sum((f_fd - f[alpha, :, :]).^2))
-    @printf("RMSE for the %i th component of force density, f, is %1.8f \n",alpha,rmse_f)
-end
-=#
-

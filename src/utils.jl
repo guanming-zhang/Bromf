@@ -57,26 +57,35 @@ function read_input(file_str)
 end
 
 ####### ------- data analysis ------- #####
-
 function get_structure_factor(rho,nx,ny,Lx,Ly)
     if ndims(rho) == 1
         rho = reshape(rho,(nx,ny))
     end
-    rho = rho .- sum(rho)/(nx*ny) # remove the DC component
+    v = sum(rho)
+    # remove the mean value 
+    rho = (rho .- v/(nx*ny))
     f_rho = fftshift(fft(rho))
-    s_rho = real(f_rho.*conj(f_rho))
-    kx = fftshift(fftfreq(nx,nx))*2.0*pi/Lx
-    ky = fftshift(fftfreq(ny,ny))*2.0*pi/Ly
+    # normalised structure factor
+    s_rho = real(f_rho.*conj(f_rho))/v
+    # original frequence 1..N+1 is mapped to 0 to 2pi
+    # only N points are outputed since fft[1] and fft[N+1] are the same
+    kx = fftshift(fftfreq(nx,nx))/(nx+1.0)*2.0*pi/Lx
+    ky = fftshift(fftfreq(ny,ny))/(ny+1.0)*2.0*pi/Ly
     return (kx,ky,s_rho)
 end
 
-function get_radial_structure_factor(kx,ky,s_rho,n_bins=0)
+function get_radial_structure_factor(kx,ky,s_rho,n_bins=0,cut_off = true)
     nx = length(kx)
     ny = length(ky)
-    k_max = sqrt(kx[end]^2 + ky[end]^2)
+    if cut_off
+        k_max = sqrt(kx[end]^2 + ky[end]^2)*0.7 #box size * sqrt(2)
+    else
+        k_max = sqrt(kx[end]^2 + ky[end]^2)
+    end
     if n_bins == 0 
         n_bins = trunc(Int,sqrt(nx*ny)*0.5)
     end
+    n_bins = trunc(Int,n_bins*cut_off + 0.5)
     delta_k = k_max/n_bins
     dA = (kx[2]-kx[1])*(ky[2]-ky[1])
     s_k = zeros(Float64,n_bins)
@@ -107,7 +116,7 @@ function get_radial_cross_corr(rho,nx,ny,Lx,Ly,n_bins = 0)
     rho = rho .- sum(rho)/(nx*ny) # remove the average value
     f_rho = fft(rho)
     corr = real(ifft(f_rho.*conj(f_rho)))
-    r_max = 0.5*sqrt(Lx*Ly)
+    r_max = 0.5*sqrt(Lx*Ly) # due to the PBC, maximum corr-length = L/2
     if n_bins == 0 
         n_bins = trunc(Int,sqrt(nx*ny)*0.5)
     end

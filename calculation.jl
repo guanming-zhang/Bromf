@@ -48,7 +48,7 @@ if haskey(input_data,"rel_epsilon") && haskey(input_data,"R")
     open(file_path, "w") do f
         write(f,JSON.json(input_data,4))
     end
-    println(R)
+    @printf("the particle radius is set to %1.4f \n",R)
 end
 
 T = input_data["T"] 
@@ -75,18 +75,22 @@ elseif input_data["iv"] == "random-normal"
     rho0 = rand(Normal(mu, sr*mu), nx,ny)
 end
 set_initial_condition(model,rho0)
-println("$(model.step_counter)")
-save_data(model,data_dir,true)
+println("the current step number is $(model.step_counter)")
+# save the initial value
+save_data(model,data_dir,input_data["compression"]>0)
 
-for s in 0:input_data["n_steps"]
+for s in 1:input_data["n_steps"]
+    if model.time_scheme in ["forward-Euler","predictor-corrector","RK2"] 
+        one_step(model)
+    end
     if mod(s,input_data["n_save"]) == 0
+        if model.time_scheme in ["julia-Tsit5","julia-TRBDF2","julia-RK4"]
+            n_steps(model,input_data["n_save"])
+        end
         @printf("The current time step number: %i \n", s)
         if any(isnan, model.rho)
             error("NaN detected, program stops")
         end
         save_data(model,data_dir,input_data["compression"]>0)
     end
-    forward(model)
 end
-
-println("end of file")
