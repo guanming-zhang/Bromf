@@ -17,13 +17,17 @@ delta_y = dl.info["range"][2] / dl.info["npts"][2]
 nx, ny = dl.info["npts"][1],dl.info["npts"][2]
 x = range(delta_x, x_max;length = nx)
 y = range(delta_y, y_max;length = ny)
+sum_rho = Array{Float64,1}()
 
 anim = @animate while !is_eod(dl)
     n_step,data = load(dl)
     t = @sprintf("%4.3f",n_step*dl.info["dt"])
     rho = reshape(Array{Float64}(data["rho"]),(nx,ny))
+    push!(sum_rho,sum(rho))
     heatmap(x,y,rho',aspect_ratio=:equal,tellheight=true,interpolate=true,title= "t = $t")
     xlims!(0,x_max)
     ylims!(0,y_max)
 end
 mp4(anim, joinpath(data_dir,"density.mp4"))
+p = plot(sum_rho,title="sum rho")
+savefig(p, joinpath(data_dir,"sum_rho.png"))

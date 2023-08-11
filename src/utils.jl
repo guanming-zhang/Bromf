@@ -74,15 +74,11 @@ function get_structure_factor(rho,nx,ny,Lx,Ly)
     return (kx,ky,s_rho)
 end
 
-function get_radial_structure_factor(kx,ky,s_rho,n_bins=0,cut_off = true)
+function get_radial_structure_factor(kx,ky,s_rho,n_bins=0,cut_off = 0.707)
     nx = length(kx)
     ny = length(ky)
-    if cut_off
-        k_max = sqrt(kx[end]^2 + ky[end]^2)*0.7 #box size * sqrt(2)
-    else
-        k_max = sqrt(kx[end]^2 + ky[end]^2)
-    end
-    if n_bins == 0 
+    k_max = sqrt(kx[end]^2 + ky[end]^2)*cut_off
+    if n_bins == 0
         n_bins = trunc(Int,sqrt(nx*ny)*0.5)
     end
     n_bins = trunc(Int,n_bins*cut_off + 0.5)

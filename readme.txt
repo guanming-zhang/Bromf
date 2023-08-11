@@ -10,7 +10,7 @@ A. To run the code:
 
 B. To plot the result
 
-1 plot the density only
+1 plot the density and the sum of density
 julia plot.jl [data_directory]
 
 2 plot the density, structure factor, radial structure factor, radial correlation function
@@ -19,7 +19,7 @@ julia plot_all.jl [data_directory]
 The .mp4 file is generated in your data directory by default
 
 C. a rule of thumb 
-lattice spacing / time stepsize ~ O(0.01)
+lattice spacing / time stepsize < 0.01
 
 
 * Packages used 
@@ -30,6 +30,10 @@ Serialization
 Plots
 FFTW
 Printf
+Distributions
+DifferentialEquations
+JLD2
+FileIO
 
 * To install julia packages
 using Pkg
