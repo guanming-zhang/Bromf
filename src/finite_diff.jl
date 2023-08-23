@@ -2,16 +2,16 @@ using SparseArrays
 using JLD2
 using FileIO
 function mod_idx(idx,n)
-    if idx < 1
-        return idx + n
-    elseif idx > n
-        return idx - n
-    else 
-        return idx
+    while idx < 1
+        idx += n
     end
+    while idx > n
+        idx -= n
+    end
+    return idx
 end
 
-function diff_mat2d(nx,ny,along,odiff,oacc=4,load_from_file =true)
+function diff_mat2d(nx,ny,along,odiff,oacc=4,load_from_file =false)
     """
     nx,ny : the number of points in each dimension
     along : derivative along x-axis(along=1) or y-axis(along=2)
@@ -248,10 +248,13 @@ function corr2d(ker::Array{Float64,2},g::Array{Float64,2},c,dx,dy)
     for i in c[1]-Nx:c[1]+Nx
         for j in c[2]-Ny:c[2]+Ny
             _i = mod_idx(i,nx)
-            _j = mod_idx(i,ny)
+            _j = mod_idx(j,ny)
             val =  get_by_pos(c[1]-i, c[2]-j,ker)*g[_i,_j]
             set_by_pos!(i-c[1],j-c[2],I,val)
+            #I[i-c[1]+Nx+1,j-c[2]+Ny+1] = val
         end
     end
+
+    #return sum(I)*dx*dy
     return simpson_int2d(I,((c[1]-Nx)*dx,(c[1]+Nx)*dx), ((c[2]-Ny)*dy,(c[2]+Ny)*dy))
 end

@@ -9,6 +9,7 @@ data_dir = ARGS[1]
 input_data = read_input(Base.joinpath(data_dir,"input.json"))
 x_max,y_max = input_data["range"]
 nx,ny = input_data["npts"]
+dx,dy = x_max/nx, y_max/ny
 dt = input_data["dt"]
 #model parameters
 if haskey(input_data,"rel_epsilon") && haskey(input_data,"N")
@@ -53,6 +54,24 @@ elseif input_data["iv"] == "random-normal"
     sr = input_data["iv_srho"]
     mu = input_data["N"]/(x_max*y_max)
     rho0 = rand(Normal(mu, sr*mu), nx,ny)
+elseif input_data["iv"] == "coarse-grain"
+    rho0 = zeros(Float64,nx,ny)
+    x = rand(Uniform(0.0,x_max),input_data["N"])
+    y = rand(Uniform(0.0,y_max),input_data["N"])
+    w = input_data["iv_rel_window"]*R
+    for i in 1:input_data["N"]
+        ix1 = trunc(Int64,(x[i] - w)/dx)
+        ix2 = trunc(Int64,(x[i] + w)/dx)
+        iy1 = trunc(Int64,(y[i] - w)/dy)
+        iy2 = trunc(Int64,(y[i] + w)/dy)
+        for ix in ix1:ix2
+            for iy in iy1:iy2
+                rho0[mod_idx(ix,nx),mod_idx(iy,ny)] += 1.0
+            end
+        end
+    end
+    rho0 = rho0/(dx*dy)*input_data["N"]/sum(rho0)
+    print(sum(rho0)*dx*dy)
 end
 set_initial_condition(model,rho0)
 println("the current step number is $(model.step_counter)")

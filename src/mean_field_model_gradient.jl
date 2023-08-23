@@ -150,7 +150,7 @@ function update_stress_parallel!(model::NumericalMeanField2D,npts_per_th,th_num)
     end
 end
 
-function update_flux_parallel!(model::NumericalMeanField2D,npts_per_th,th_num)
+function calculate_flux_parallel!(model::NumericalMeanField2D,npts_per_th,th_num)
     idx_rng = npts_per_th*(th_num-1)+1:npts_per_th*th_num
     # calculate the free energy flux j
     for alpha in 1:2
@@ -181,14 +181,39 @@ end
 
 function update_drho_parallel!(model::NumericalMeanField2D,npts_per_th,th_num)
     idx_rng = npts_per_th*(th_num-1)+1:npts_per_th*th_num
-    for i in idx_rng
-        model.drho[i] = 0.0
-    end
+    model.drho[idx_rng] .= 0.0
+    # calculate the ∇rho.∇mu
     for alpha in 1:2
         odiff = [0, 0]
         odiff[alpha] = 1
-        model.drho[idx_rng] += model.block_cdiff_mat[tuple(odiff...)][th_num] * (model.j[alpha, :] - model.f[alpha, :])
+        grad_mu = model.block_cdiff_mat[tuple(odiff...)][th_num] * model.mu
+        grad_rho = model.block_cdiff_mat[tuple(odiff...)][th_num] * model.rho
+        model.drho[idx_rng] += grad_mu.*grad_rho
     end
+    
+    # calculate (rho (∇^2)mu) + T(∇^2)rho
+    for alpha in 1:2
+        odiff = [0, 0]
+        odiff[alpha] = 2
+        # calculate rho (∇^2)mu
+        model.drho[idx_rng] += model.rho[idx_rng].*(model.block_cdiff_mat[tuple(odiff...)][th_num] * model.mu)
+        # calcuate T(∇^2)rho
+        model.drho[idx_rng] += model.params["T"]*model.block_cdiff_mat[tuple(odiff...)][th_num] * model.rho
+    end
+    
+    # divided by the mobility coeff,Gamma
+    model.drho /= model.params["Gamma"]
+
+    # calculate the stress part ∇∇:sigma
+    for alpha in 1:2
+        for beta in 1:2
+            odiff = [0, 0]
+            odiff[alpha] += 1
+            odiff[beta] += 1
+            model.drho[idx_rng] += model.block_cdiff_mat[tuple(odiff...)][th_num] * model.sigma[alpha, beta, :]
+        end
+    end
+    
 end
 
 function update_parallel!(model::NumericalMeanField2D)
@@ -198,9 +223,6 @@ function update_parallel!(model::NumericalMeanField2D)
     end
     Threads.@threads for th_num in 1:model.num_th
         update_stress_parallel!(model,model.pts_per_th,th_num)
-    end
-    Threads.@threads for th_num in 1:model.num_th
-        update_flux_parallel!(model,model.pts_per_th,th_num)
     end
     Threads.@threads for th_num in 1:model.num_th
         update_drho_parallel!(model,model.pts_per_th,th_num)
@@ -276,7 +298,7 @@ function save_data(model::NumericalMeanField2D, dir_str::String,compression::Boo
     pts_per_thread = div(model.npts[1] * model.npts[2],model.num_th)
     if mod(model.npts[1]*model.npts[2],model.num_th) == 0
         Threads.@threads for th_num in 1:model.num_th
-            update_drho_parallel!(model,pts_per_thread,th_num)
+            calculate_flux_parallel!(model,pts_per_thread,th_num)
         end
     else
         error("the number of points must be divisible by the number of thread")
