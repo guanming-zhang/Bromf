@@ -12,14 +12,24 @@ function DataLoader(root_dir::String)
     DataLoader(root_dir,info,counter)
 end
 
-function is_eod(dl::DataLoader)
-    """
-    check if reaching the last frame
-    """
-    if dl.counter > dl.info["n_steps"] 
+function is_frame_existed(dl::DataLoader,frame_num)
+    json_file_path = joinpath(dl.data_root_dir, "Frame_$frame_num.json")
+    zip_file_path = joinpath(dl.data_root_dir, "Frame_$frame_num.zip")
+    if isfile(json_file_path) || isfile(zip_file_path)
         return true
     end
     return false
+end
+function is_eod(dl::DataLoader)
+    """
+    check if reaching the last existed frame
+    """
+    if is_frame_existed(dl,dl.counter)
+        return false
+    elseif dl.counter < dl.info["n_steps"] 
+        println("reaches EOD, there are frames not calculated")
+    end
+    return true
 end
 
 
@@ -69,8 +79,8 @@ function get_structure_factor(rho,nx,ny,Lx,Ly)
     s_rho = real(f_rho.*conj(f_rho))/v
     # original frequence 1..N+1 is mapped to 0 to 2pi
     # only N points are outputed since fft[1] and fft[N+1] are the same
-    kx = fftshift(fftfreq(nx,nx))/(nx+1.0)*2.0*pi/Lx
-    ky = fftshift(fftfreq(ny,ny))/(ny+1.0)*2.0*pi/Ly
+    kx = fftshift(fftfreq(nx,nx))*2.0*pi/Lx
+    ky = fftshift(fftfreq(ny,ny))*2.0*pi/Ly
     return (kx,ky,s_rho)
 end
 
