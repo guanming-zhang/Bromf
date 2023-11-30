@@ -11,11 +11,13 @@ function mod_idx(idx,n)
     return idx
 end
 
-function diff_mat2d(nx,ny,along,odiff,oacc=4,load_from_file =false)
+function diff_mat2d(nx,ny,along,odiff,mode ="central",oacc=4,load_from_file =false)
     """
     nx,ny : the number of points in each dimension
     along : derivative along x-axis(along=1) or y-axis(along=2)
     odiff : order of the derivative
+    model : "central" for central difference
+            "foward" for foward difference
     oacc  : order of accuracy
     load_from_file : try to load precaluclated matrices
     return: the difference matrix
@@ -37,22 +39,42 @@ function diff_mat2d(nx,ny,along,odiff,oacc=4,load_from_file =false)
     end
         
     N = nx*ny
-    if oacc == 2
-        cdiff_coeff = [0.0  -0.5  0.0   0.5   0.0;
-                       0.0   1.0 -2.0   1.0   0.0]
-    elseif oacc == 4
-        cdiff_coeff = [1.0/12.0  -2.0/3.0  0.0      2.0/3.0  -1.0/12.0;
-                      -1.0/12.0   4.0/3.0 -5.0/2.0 	4.0/3.0  -1.0/12.0]
-    elseif oacc == 6
-        cdiff_coeff = [-1.0/60.0  3.0/20.0  -3.0/4.0  0.0        3.0/4.0  -3.0/20.0  1.0/60.0;
-                        1.0/90.0 -3.0/20.0 	 3.0/2.0 -49.0/18.0  3.0/2.0  -3.0/20.0  1.0/90.0]
-    elseif oacc == 8
-        cdiff_coeff = [1.0/280.0  -4.0/105.0  1.0/5.0  -4.0/5.0   0.0         4.0/5.0  -1.0/5.0  4.0/105.0  -1.0/280.0;
-                      -1.0/560.0   8.0/315.0 -1.0/5.0   8.0/5.0  -205.0/72.0  8.0/5.0  -1.0/5.0  8.0/315.0  -1.0/560.0]
+    if mode == "central"
+        if oacc == 2
+            diff_coeff = [0.0  -0.5  0.0   0.5   0.0;
+                          0.0   1.0 -2.0   1.0   0.0]
+        elseif oacc == 4
+            diff_coeff = [1.0/12.0  -2.0/3.0  0.0      2.0/3.0  -1.0/12.0;
+                         -1.0/12.0   4.0/3.0 -5.0/2.0 	4.0/3.0  -1.0/12.0]
+        elseif oacc == 6
+            diff_coeff = [-1.0/60.0  3.0/20.0  -3.0/4.0  0.0        3.0/4.0  -3.0/20.0  1.0/60.0;
+                           1.0/90.0 -3.0/20.0 	 3.0/2.0 -49.0/18.0  3.0/2.0  -3.0/20.0  1.0/90.0]
+        elseif oacc == 8
+            diff_coeff = [1.0/280.0  -4.0/105.0  1.0/5.0  -4.0/5.0   0.0         4.0/5.0  -1.0/5.0  4.0/105.0  -1.0/280.0;
+                         -1.0/560.0   8.0/315.0 -1.0/5.0   8.0/5.0  -205.0/72.0  8.0/5.0  -1.0/5.0  8.0/315.0  -1.0/560.0]
+        else
+            error("oacc = 2,4,6 or 8 for central difference, no other values allowed")
+        end
+    elseif mode == "forward"
+        if oacc == 1
+            diff_coeff = [0.0  0.0 -1.0  1.0  0.0;
+                          0.0  0.0  1.0 -2.0  1.0]
+        elseif oacc ==2
+            diff_coeff = [0.0  0.0  0.0 -3.0/2.0  2.0  -1.0/2.0  0.0;
+                          0.0  0.0  0.0  2.0     -5.0   4.0     -1.0]
+        elseif oacc ==3
+            diff_coeff = [0.0  0.0  0.0  0.0  -11.0/6.0    3.0      -3.0/2.0    1.0/3.0   0.0;
+                          0.0  0.0  0.0  0.0   35.0/12.0  -26.0/3.0  19.0/2.0  -14.0/3.0  11.0/12.0]
+        elseif oacc ==4
+            diff_coeff = [0.0  0.0  0.0  0.0  0.0  -25.0/12.0   4.0       -3.0         4.0/3.0  -1.0/4.0     0.0;
+                          0.0  0.0  0.0  0.0  0.0  15.0/4.0    -77.0/6.0   107.0/6.0  -13.0      61.0/12.0  -5.0/6.0]
+        else
+            error("oacc = 1,2,3 or 4 for forward difference, no other values allowed")
+        end
     else
-        error("oacc = 2,4,6 or 8, no other values allowed")
+        error("model = central or forward, no other schemes implemented")
     end
-    nrow,ncol = size(cdiff_coeff)
+    nrow,ncol = size(diff_coeff)
     nbrs = ncol ÷ 2         # integer division
     diff_mat = spzeros(Float64, N, N)
     stencil_ind =  Array{Int64,1}(undef,ncol)
@@ -104,7 +126,7 @@ function diff_mat2d(nx,ny,along,odiff,oacc=4,load_from_file =false)
                 error("along = 1 or 2, no other values allowed")
             end 
             for is in 1:ncol
-                diff_mat[stencil_ind[nbrs + 1],stencil_ind[is]] = cdiff_coeff[odiff,is]
+                diff_mat[stencil_ind[nbrs + 1],stencil_ind[is]] = diff_coeff[odiff,is]
             end
         end
     end
@@ -126,17 +148,17 @@ function diff_mat2d(nx,ny,along,odiff,oacc=4,load_from_file =false)
     return sparse(diff_mat)
 end
 
-function mixed_diff_mat2d(mdiff::Tuple{Integer,Integer},nx,ny,dx,dy)
+function mixed_diff_mat2d(mdiff::Tuple{Integer,Integer},nx,ny,dx,dy,mode="central",oacc=4)
     if mdiff[1] == 0
         diff_x = 1.0/(dx^mdiff[1])
     else
-        diff_x = diff_mat2d(nx,ny,1,mdiff[1])/(dx^mdiff[1])
+        diff_x = diff_mat2d(nx,ny,1,mdiff[1],mode,oacc)/(dx^mdiff[1])
     end
 
     if mdiff[2] == 0
         diff_y = 1.0/(dy^mdiff[2])
     else
-        diff_y = diff_mat2d(nx,ny,2,mdiff[2])/(dy^mdiff[2])
+        diff_y = diff_mat2d(nx,ny,2,mdiff[2],mode,oacc)/(dy^mdiff[2])
     end
     return sparse(diff_x*diff_y)
 end

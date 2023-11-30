@@ -22,8 +22,10 @@ mutable struct NumericalMeanField2D
     # model variables
     x::Array{Float64,1}           # x coordinate 
     y::Array{Float64,1}           # y coordinate
-    #cdiff_mat::Dict{Tuple{Integer,Integer},SparseMatrixCSC{Float64, Int64}} #sparse Totpliz matix for central difference
+    # sparse central difference matrix block_cdiff_mat::Dict{Tuple{Integer,Integer},SparseMatrixCSC{Float64, Int64}}
     block_cdiff_mat::Dict{Tuple{Integer,Integer},Array{SparseMatrixCSC{Float64, Int64},1}}
+    # sparse froward difference matrix block_cdiff_mat::Dict{Tuple{Integer,Integer},SparseMatrixCSC{Float64, Int64}}
+    block_fdiff_mat::Dict{Tuple{Integer,Integer},Array{SparseMatrixCSC{Float64, Int64},1}}
     # model variables
     rho::Array{Float64,1}         # density, a vector of N*N points (N = rng[1]*rng[2])
     drho::Array{Float64,1}        # change of density at each step
@@ -68,15 +70,30 @@ function NumericalMeanField2D(x_max, y_max, nx, ny, dt, t_scheme="forward-Euler"
     if mod(nx*ny,num_th) != 0
         error("the number of points must be divisible by the number of thread")
     end
+
+    # generate block central difference matrix
     block_cdiff_mat=Dict{Tuple{Integer,Integer},Array{SparseMatrixCSC{Float64, Int64},1}}()
     for odiff_x in 0:2
         for odiff_y in 0:2
             if odiff_x + odiff_y <=2 && odiff_x + odiff_y>0 
                 odiff = (odiff_x,odiff_y)
-                block_cdiff_mat[odiff] = cut_into_blocks(mixed_diff_mat2d(odiff,nx,ny,delta[1],delta[2]),num_th)
+                block_cdiff_mat[odiff] = cut_into_blocks(mixed_diff_mat2d(odiff,nx,ny,delta[1],delta[2],"central",2),num_th)
             end
         end
     end
+
+    # generate block forward difference matrix
+    block_fdiff_mat=Dict{Tuple{Integer,Integer},Array{SparseMatrixCSC{Float64, Int64},1}}()
+    for odiff_x in 0:2
+        for odiff_y in 0:2
+            if odiff_x + odiff_y <=2 && odiff_x + odiff_y>0 
+                odiff = (odiff_x,odiff_y)
+                block_fdiff_mat[odiff] = cut_into_blocks(mixed_diff_mat2d(odiff,nx,ny,delta[1],delta[2],"forward",1),num_th)
+            end
+        end
+    end
+
+    
     rho = zeros(Float64, nx * ny)
     drho = zeros(Float64, nx * ny)
     sigma = zeros(Float64, 2, 2, nx * ny)
@@ -89,8 +106,8 @@ function NumericalMeanField2D(x_max, y_max, nx, ny, dt, t_scheme="forward-Euler"
     potential_kernel = zeros(Float64,21,21)
     stress_kernel = Dict{Tuple{Int64,Int64},Array{Float64,2}}()
     NumericalMeanField2D(rng, npts, delta, time_scheme, params, dt, step_counter, num_th, pts_per_th,
-        x, y,block_cdiff_mat, rho, drho, sigma, potential_kernel, stress_kernel, mu, j, f, 
-        rho_store, drho_store,false,false,nothing)
+        x, y,block_cdiff_mat, block_fdiff_mat, rho, drho, sigma, potential_kernel, stress_kernel, mu, j, f, 
+        rho_store, drho_store, false, false, nothing)
 end
 
 
@@ -240,16 +257,19 @@ end
 function update_drho_parallel!(model::NumericalMeanField2D,npts_per_th,th_num)
     idx_rng = npts_per_th*(th_num-1)+1:npts_per_th*th_num
     model.drho[idx_rng] .= 0.0
-    # calculate the ∇rho.∇mu
+    
+    # use chain rule to break ∇.(rho ∇mu) into ∇rho.∇mu + rho ∇^2 mu 
+    # also calculate T(∇^2)rho
+    # calculate the ∇rho.∇mu using the forward difference scheme
     for alpha in 1:2
         odiff = [0, 0]
         odiff[alpha] = 1
-        grad_mu = model.block_cdiff_mat[tuple(odiff...)][th_num] * model.mu
-        grad_rho = model.block_cdiff_mat[tuple(odiff...)][th_num] * model.rho
+        grad_mu = model.block_fdiff_mat[tuple(odiff...)][th_num] * model.mu
+        grad_rho = model.block_fdiff_mat[tuple(odiff...)][th_num] * model.rho
         model.drho[idx_rng] += grad_mu.*grad_rho
     end
     
-    # calculate (rho (∇^2)mu) + T(∇^2)rho
+    # calculate (rho (∇^2)mu) + T(∇^2)rho using the central difference scheme
     for alpha in 1:2
         odiff = [0, 0]
         odiff[alpha] = 2
@@ -258,7 +278,7 @@ function update_drho_parallel!(model::NumericalMeanField2D,npts_per_th,th_num)
         # calcuate T(∇^2)rho
         model.drho[idx_rng] += model.params["T"]*model.block_cdiff_mat[tuple(odiff...)][th_num] * model.rho
     end
-    
+
     # divided by the mobility coeff,Gamma
     model.drho /= model.params["Gamma"]
 
@@ -271,7 +291,6 @@ function update_drho_parallel!(model::NumericalMeanField2D,npts_per_th,th_num)
             model.drho[idx_rng] += model.block_cdiff_mat[tuple(odiff...)][th_num] * model.sigma[alpha, beta, :]
         end
     end
-    
 end
 
 function update_parallel!(model::NumericalMeanField2D)
