@@ -245,6 +245,47 @@ function set_by_pos!(nx,ny,M,val)
     M[nx+Nx+1,ny+Ny+1] = val
 end
 
+
+function convol2d(f::Array{Float64,2},k::Array{Float64,2},x,dx,dy)
+"""
+    calculate the 2d convolusion between to continuous function 
+    at point x = (c[1]*dx,c[2]*dy), where c[1] and c[2] are integers
+    (f*k)(x) = ∫ f(y)k(x-y) dy 
+             = ∫ k(y)f(x-y) dy (implemented)
+    f:     the Fx-by-Fy matrix representation of a continuous 2d field
+           the domain of this function is [dx,Nx*dx]*[dy,Ny*dy]
+           f[ix,iy] = the value of the continuous function f
+                      at the point (ix*dx,iy*dy)
+    k:     the (2*Kx+1)-(by-2*Ky+1) matrix representation of a continuous 2d kernal
+           the domain of this kernal is [-Kx*dx,-Kx*dx]*[-Ky*dy,-Ky*dy]
+           k[ix,iy] = the value of the continuous function k 
+                      at the point ( (-Kx+ix)*dx, (-Ky+iy)*dy)
+    ! Note that the f and k are not interchanable in this implementation.
+    k(r) is a physical potential or interacting factor which decays with r
+    f must be a periodic function
+"""
+    
+    I = zeros(Float64,size(k))
+    # I in an intermediate variable represent I(y) = k(y)f(x-y)
+    # I[ix,iy] = the value of the continous function I
+    #            at the point (ix*dx,iy*dy)
+    Fx,Fy = size(f)
+    _Lx,_Ly = size(k)
+    Kx,Ky = div(_Lx-1,2), div(_Ly-1,2)
+    for ix in 1:2*Kx+1
+        for iy in 1:2*Ky+1
+            # k[ix,iy] = k( (-Kx+ix)*dx, (-Ky+iy)*dy ) k is the corresponding continous function
+            # such that y1 = (-Kx+ix)*dx,y2 = (-Ky+iy)*dy
+            # x-y = (x1-y1,x2-y2) = ( (x[1]+Kx-ix)*dx, (x[2]+Ky-iy)*dy )
+            # f[x[1]+Kx-ix],x[2]+Ky-iy] = value at continous function f(x-y)
+            _i = mod_idx(x[1]+Kx-ix,Fx) #
+            _j = mod_idx(x[2]+Ky-iy,Fy)
+            I[ix,iy] = k[ix,iy]*f[_i,_j]
+        end
+    end
+    return simpson_int2d(I,(-Kx*dx,Kx*dx),(-Ky*dy,Ky*dy))
+end
+
 function corr2d(ker::Array{Float64,2},g::Array{Float64,2},c,dx,dy)
 """
     calculate the 2d correlation function at point c (2d point)

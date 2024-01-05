@@ -10,7 +10,7 @@ include("finite_diff.jl")
 
 
 mutable struct NumericalMeanField2D
-    rng::Array{Float64,1}         # size of the domain is rng[1] by rng[2]
+    rng::Array{Float64,1}         # size of the domain is rng[1] by rng[2] for [0,rng[1]]*[0,rng[2]]
     npts::Array{Integer,1}        # number of points per dimension npts
     delta::Array{Float64,1}       # spatial discritization 
     time_scheme::String           # forward-euler or predictor-corrector
@@ -35,6 +35,12 @@ mutable struct NumericalMeanField2D
     mu::Array{Float64,1}          # chemical potential, a N^2-elements vector
     j::Array{Float64,2}           # j energy flux, a 2*(N^2) matrix j = div
     f::Array{Float64,2}           # f force density, a 2*(N^2) matrix f = div. sigma
+    #noise term addition
+    white_noise::Array{Float64,1}                                # a Gaussian white noise vector of N*N points (N = rng[1]*rng[2])
+    multi_noise::Dict{Tuple{Int64},Array{Float64,2}}             # multiplicative noise =white noise*sqrt(rho), a 2*(N^2) matrix, multi_noise[1,:] means multi_noise_x
+    force_noise::Array{Float64,2}                                # noise force, a 2*(N^2) matrix, force_noise[1,:] means force_noise_x
+    noise_kernel::Dict{Tuple{Int64,Int64},Array{Float64,2}}      # the kernel for noise calculation
+
     # auxiliary variables
     rho_store::Array{Float64,1}   # an intermediate variable for predictor-corrector scheme
     drho_store::Array{Float64,1}  # an intermediate varialbe for predictor-corrector scheme
@@ -105,9 +111,14 @@ function NumericalMeanField2D(x_max, y_max, nx, ny, dt, t_scheme="forward-Euler"
     # initialize the kernel, they will be reset later
     potential_kernel = zeros(Float64,21,21)
     stress_kernel = Dict{Tuple{Int64,Int64},Array{Float64,2}}()
+    #noise_term_additions
+    white_noise = zeros(Float64, nx * ny)
+    multi_noise = Dict{Tuple{Int64},Array{Float64,2}}()        
+    force_noise = zeros(Float64, 2, nx * ny)       
+    noise_kernel = Dict{Tuple{Int64,Int64},Array{Float64,2}}() 
     NumericalMeanField2D(rng, npts, delta, time_scheme, params, dt, step_counter, num_th, pts_per_th,
-        x, y,block_cdiff_mat, block_fdiff_mat, rho, drho, sigma, potential_kernel, stress_kernel, mu, j, f, 
-        rho_store, drho_store, false, false, nothing)
+        x, y, block_cdiff_mat, block_fdiff_mat, rho, drho, sigma, potential_kernel, stress_kernel, mu, j, f, white_noise,
+        multi_noise, force_noise, noise_kernel, rho_store, drho_store, false, false, nothing)
 end
 
 
@@ -127,42 +138,45 @@ function set_kernels(model::NumericalMeanField2D)
     # the kernel is initialized here
     # kernel is a function k(r)
     # for BRO potential kernel k(r) = R-0.5r (=0 if r>2R)
-    # for BRO stress kernel k_xx(r) = 0.25*rx*rx/r^2 (=0 if r>2R)
-    #                       k_xy(r) = 0.25*rx*ry/r^2 (=0 if r>2R)
-    #                       k_yy(r) = 0.25*ry*ry/r^2 (=0 if r>2R)
-    Nx = trunc(Int, R/model.delta[1]) + 2
-    Ny = trunc(Int, R/model.delta[2]) + 2
-    model.potential_kernel = zeros(Float64,2*Nx+1,2*Ny+1)
+    # for BRO stress kernel s_xx(r) = 0.25*rx*rx/r^2 (=0 if r>2R)
+    #                       s_xy(r) = 0.25*rx*ry/r^2 (=0 if r>2R)
+    #                       s_yy(r) = 0.25*ry*ry/r^2 (=0 if r>2R)
+    
+    Nx = trunc(Int, 2.0*model.R/model.delta[1]) + 4 # 4 is a small number for marginal padding 
+    Ny = trunc(Int, 2.0*model.R/model.delta[2]) + 4 # 4 is a small number for marginal padding
+    if (Nx > model.npts[0] || Ny > model.npts[0]) 
+        error("[convolusion fails] R is too big, decrease R")
+    end
+    if (model.R < model.delta[1]) 
+        error("[convolusion fails] R is too small, finer the grids or increase R")
+    end
     for alpha in 1:2
         for beta in 1:2
             model.stress_kernel[(alpha,beta)] = zeros(Float64,2*Nx+1,2*Ny+1)
+            model.noise_kernel[(alpha,beta)] = zeros(Float64,2*Nx+1,2*Ny+1)
         end
     end
+    model.potential_kernel = zeros(Float64,2*Nx+1,2*Ny+1)
     dx,dy = model.delta[1],model.delta[2]
     for ix in -Nx:Nx
         for iy in -Ny:Ny
-            r = sqrt((ix*dx)^2 + (iy*dy)^2)
+            x = (ix + Nx)*dx
+            y = (ix + Ny)*dy
+            r = sqrt(x*x+ y*y)
             r2 = r*r
             if r <= 2*R
-                # exclude self-interaction is important
-                if ix == 0 && iy==0
-                    set_by_pos!(ix,iy,model.potential_kernel,R - 0.5*r)
-                else
-                    set_by_pos!(ix,iy,model.potential_kernel,R - 0.5*r)
-                end
-                if ix == 0 && iy==0
-                    ker_xx,ker_xy = 0.0,0.0
-                    ker_yx,ker_yy = 0.0,0.0
-                else
-                    ker_xx = 0.25*ix*ix*dx*dx/r2
-                    ker_xy = 0.25*ix*iy*dx*dy/r2
-                    ker_yx = 0.25*iy*ix*dx*dy/r2
-                    ker_yy = 0.25*iy*iy*dy*dy/r2
-                end
-                set_by_pos!(ix,iy,model.stress_kernel[(1,1)],ker_xx)
-                set_by_pos!(ix,iy,model.stress_kernel[(1,2)],ker_xy)
-                set_by_pos!(ix,iy,model.stress_kernel[(2,1)],ker_yx)
-                set_by_pos!(ix,iy,model.stress_kernel[(2,2)],ker_yy)
+                # potential
+                model.potential_kernel[ix,iy] = model.R - 0.5*r
+                # stress
+                model.stress_kernel[(1,1)] = 0.25*x*x/r2
+                model.stress_kernel[(1,2)] = 0.25*x*y/r2
+                model.stress_kernel[(2,1)] = 0.25*y*x/r2
+                model.stress_kernel[(2,2)] = 0.25*y*y/r2
+                
+                model.noise_kernel[(1,1)] = 0.5*ix*ix*dx*dx/r
+                model.noise_kernel[(1,2)] = 0.5*ix*iy*dx*dy/r
+                model.noise_kernel[(2,1)] = 0.5*iy*ix*dx*dy/r
+                model.noise_kernel[(2,2)] = 0.5*iy*iy*dy*dy/r
             end
         end
     end
@@ -198,8 +212,7 @@ function update_chemical_pot_parallel!(model::NumericalMeanField2D,npts_per_th,t
         # the chemical potential at (ix*dx,iy*dy)
         ix = mod_idx(idx,model.npts[1]) 
         iy = div(idx - ix,model.npts[1]) + 1
-        model.mu[idx] = model.rho[idx]*corr2d(model.potential_kernel,rho,(ix,iy)
-                                        ,model.delta[1],model.delta[2]) 
+        model.mu[idx] = model.rho[idx]*convol2d(rho,model.potential_kernel,(ix,iy),model.delta[1],model.delta[2]) 
     end
 end
 
@@ -216,8 +229,42 @@ function update_stress_parallel!(model::NumericalMeanField2D,npts_per_th,th_num)
                 # the stress at (ix*dx,iy*dy)
                 ix = mod_idx(idx,model.npts[1]) 
                 iy = div(idx - ix,model.npts[1]) + 1
-                model.sigma[alpha, beta, idx] =  -0.5*model.params["D"]*model.rho[idx]*corr2d(
-                                                 model.stress_kernel[(alpha,beta)],rho,(ix,iy),model.delta[1],model.delta[2])
+                model.sigma[alpha, beta, idx] =  -0.5*model.params["D"]*model.rho[idx]*convol2d(
+                                                 rho,model.stress_kernel[(alpha,beta)],(ix,iy),model.delta[1],model.delta[2])
+            end
+        end
+    end
+end
+
+function update_noise_parallel!(model::NumericalMeanField2D,npts_per_th,th_num)
+    # calculate the force in noise term
+    idx_rng = npts_per_th*(th_num-1)+1:npts_per_th*th_num
+    # assign zero to model.force_noise
+    # try not to use fill since it will change the entire matrix
+    for i in idx_rng
+        for alpha in 1:2
+            model.force_noise[alpha,i] = 0.0
+        end
+        #failsafe - floor the negative values of rho to zero
+        if model.rho[i] < 0.0
+            model.rho[i] = 0.0
+        end
+    end
+    rho = reshape(model.rho,(model.npts[1],model.npts[2]))
+
+    for alpha in 1:2
+        # sample a matrix of model.npts[1]*model.npts[2] Gaussian random variables with mean = 0 and sd = sqrt(dt)
+        model.white_noise = randn(model.npts[1]*model.npts[2])
+        white_noise = reshape(sqrt(model.dt)*model.white_noise, (model.npts[1],model.npts[2]))
+        model.multi_noise[(alpha,)] = sqrt.(rho).*white_noise
+
+        for beta in 1:2
+            for idx in idx_rng
+                # the noise stress at (ix*dx,iy*dy)
+                ix = mod_idx(idx,model.npts[1]) 
+                iy = div(idx - ix,model.npts[1]) + 1
+                model.force_noise[alpha, idx] += sqrt(model.params["D"])*model.rho[idx]*corr2d(
+                    model.noise_kernel[(alpha,beta)],model.multi_noise[(alpha,)],(ix,iy),model.delta[1],model.delta[2])
             end
         end
     end
@@ -291,6 +338,25 @@ function update_drho_parallel!(model::NumericalMeanField2D,npts_per_th,th_num)
             model.drho[idx_rng] += model.block_cdiff_mat[tuple(odiff...)][th_num] * model.sigma[alpha, beta, :]
         end
     end
+
+    # calculate the noise part ∇.force_noise
+    for alpha in 1:2
+        odiff = [0, 0]
+        odiff[alpha] = 1
+        model.drho[idx_rng] += (model.block_cdiff_mat[tuple(odiff...)][th_num] * model.force_noise[alpha, :])./model.dt
+        #change the division by dt
+    end
+
+    # #white noise for testing
+    # for alpha in 1:2
+    #     odiff = [0, 0]
+    #     # odiff[alpha] = 1
+          #Dean's noise
+    #     # model.drho[idx_rng] += (model.block_cdiff_mat[tuple(odiff...)][th_num] * (model.params["D"]*sqrt(model.dt)*(sqrt.(model.rho)).*randn(model.npts[1]*model.npts[2])))./model.dt
+          #Div(white noise)
+    #     # model.drho[idx_rng] += (model.block_cdiff_mat[tuple(odiff...)][th_num] * (model.params["D"]*sqrt(model.dt).*randn(model.npts[1]*model.npts[2])))./model.dt
+
+    # end
 end
 
 function update_parallel!(model::NumericalMeanField2D)
@@ -300,6 +366,9 @@ function update_parallel!(model::NumericalMeanField2D)
     end
     Threads.@threads for th_num in 1:model.num_th
         update_stress_parallel!(model,model.pts_per_th,th_num)
+    end
+    Threads.@threads for th_num in 1:model.num_th
+        update_noise_parallel!(model,model.pts_per_th,th_num)
     end
     Threads.@threads for th_num in 1:model.num_th
         update_drho_parallel!(model,model.pts_per_th,th_num)
@@ -399,7 +468,7 @@ end
 #############--------some notes--------############
 # Try not to use boradcasting(.*) on sparse matrices
 # or you will get an out-of-memory error in julia
-# Try not using indexing on sparse matrices since 
+# Try not to use indexing on sparse matrices since 
 # it is very slow
 ###################################################
 
