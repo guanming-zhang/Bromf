@@ -98,6 +98,7 @@ function NumericalMeanField2D(x_max, y_max, nx, ny, dt, t_scheme="forward-Euler"
             end
         end
     end
+    # use 2nd order accuary central difference and 1st order forward difference to make use the mass is conserved
 
     
     rho = zeros(Float64, nx * ny)
@@ -142,41 +143,47 @@ function set_kernels(model::NumericalMeanField2D)
     #                       s_xy(r) = 0.25*rx*ry/r^2 (=0 if r>2R)
     #                       s_yy(r) = 0.25*ry*ry/r^2 (=0 if r>2R)
     
-    Nx = trunc(Int, 2.0*model.R/model.delta[1]) + 4 # 4 is a small number for marginal padding 
-    Ny = trunc(Int, 2.0*model.R/model.delta[2]) + 4 # 4 is a small number for marginal padding
-    if (Nx > model.npts[0] || Ny > model.npts[0]) 
+    Kx = trunc(Int, 2.0*model.params["R"]/model.delta[1]) + 4 # 4 is a small number for marginal padding 
+    Ky = trunc(Int, 2.0*model.params["R"]/model.delta[2]) + 4 # 4 is a small number for marginal padding
+    if (Kx > model.npts[1] || Ky > model.npts[2]) 
         error("[convolusion fails] R is too big, decrease R")
     end
-    if (model.R < model.delta[1]) 
-        error("[convolusion fails] R is too small, finer the grids or increase R")
+    if (model.params["R"] < model.delta[1]) 
+        print("Warning: R is too small, the convolusion vanishes\n")
     end
+    
+    # size of the kernals = (2*Kx+1,2*Ky+1) 
     for alpha in 1:2
         for beta in 1:2
-            model.stress_kernel[(alpha,beta)] = zeros(Float64,2*Nx+1,2*Ny+1)
-            model.noise_kernel[(alpha,beta)] = zeros(Float64,2*Nx+1,2*Ny+1)
+            model.stress_kernel[(alpha,beta)] = zeros(Float64,2*Kx+1,2*Ky+1)
+            model.noise_kernel[(alpha,beta)] = zeros(Float64,2*Kx+1,2*Ky+1)
         end
     end
-    model.potential_kernel = zeros(Float64,2*Nx+1,2*Ny+1)
+    model.potential_kernel = zeros(Float64,2*Kx+1,2*Ky+1)
     dx,dy = model.delta[1],model.delta[2]
-    for ix in -Nx:Nx
-        for iy in -Ny:Ny
-            x = (ix + Nx)*dx
-            y = (ix + Ny)*dy
+    for ix in 1:2*Kx+1
+        for iy in 1:2*Ky+1
+            x = (ix - Kx)*dx
+            y = (iy - Ky)*dy
             r = sqrt(x*x+ y*y)
             r2 = r*r
-            if r <= 2*R
+            if ((r <= 2*R) && (ix != Kx || iy != Ky))
+                # if ix == Kx and iy == Ky then x==y==0
+                # dividing by r2 or r gives inf, 
+                # when r=0 we set everything to 0 to avoid self interaction
+                # set
                 # potential
-                model.potential_kernel[ix,iy] = model.R - 0.5*r
+                model.potential_kernel[ix,iy] = model.params["R"] - 0.5*r
                 # stress
-                model.stress_kernel[(1,1)] = 0.25*x*x/r2
-                model.stress_kernel[(1,2)] = 0.25*x*y/r2
-                model.stress_kernel[(2,1)] = 0.25*y*x/r2
-                model.stress_kernel[(2,2)] = 0.25*y*y/r2
+                model.stress_kernel[(1,1)][ix,iy] = 0.25*x*x/r2
+                model.stress_kernel[(1,2)][ix,iy] = 0.25*x*y/r2
+                model.stress_kernel[(2,1)][ix,iy] = 0.25*y*x/r2
+                model.stress_kernel[(2,2)][ix,iy] = 0.25*y*y/r2
                 
-                model.noise_kernel[(1,1)] = 0.5*ix*ix*dx*dx/r
-                model.noise_kernel[(1,2)] = 0.5*ix*iy*dx*dy/r
-                model.noise_kernel[(2,1)] = 0.5*iy*ix*dx*dy/r
-                model.noise_kernel[(2,2)] = 0.5*iy*iy*dy*dy/r
+                model.noise_kernel[(1,1)][ix,iy] = 0.5*x*x/r
+                model.noise_kernel[(1,2)][ix,iy] = 0.5*x*y/r
+                model.noise_kernel[(2,1)][ix,iy] = 0.5*y*x/r
+                model.noise_kernel[(2,2)][ix,iy] = 0.5*y*y/r
             end
         end
     end
@@ -340,12 +347,12 @@ function update_drho_parallel!(model::NumericalMeanField2D,npts_per_th,th_num)
     end
 
     # calculate the noise part ∇.force_noise
-    for alpha in 1:2
-        odiff = [0, 0]
-        odiff[alpha] = 1
-        model.drho[idx_rng] += (model.block_cdiff_mat[tuple(odiff...)][th_num] * model.force_noise[alpha, :])./model.dt
-        #change the division by dt
-    end
+    #for alpha in 1:2
+    #    odiff = [0, 0]
+    #    odiff[alpha] = 1
+    #    model.drho[idx_rng] += (model.block_cdiff_mat[tuple(odiff...)][th_num] * model.force_noise[alpha, :])./model.dt
+    #    #change the division by dt
+    #end
 
     # #white noise for testing
     # for alpha in 1:2
@@ -367,9 +374,9 @@ function update_parallel!(model::NumericalMeanField2D)
     Threads.@threads for th_num in 1:model.num_th
         update_stress_parallel!(model,model.pts_per_th,th_num)
     end
-    Threads.@threads for th_num in 1:model.num_th
-        update_noise_parallel!(model,model.pts_per_th,th_num)
-    end
+    #Threads.@threads for th_num in 1:model.num_th
+    #    update_noise_parallel!(model,model.pts_per_th,th_num)
+    #end
     Threads.@threads for th_num in 1:model.num_th
         update_drho_parallel!(model,model.pts_per_th,th_num)
     end
