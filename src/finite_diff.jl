@@ -16,11 +16,19 @@ function diff_mat2d(nx,ny,along,odiff,mode ="central",oacc=4,load_from_file =fal
     nx,ny : the number of points in each dimension
     along : derivative along x-axis(along=1) or y-axis(along=2)
     odiff : order of the derivative
-    model : "central" for central difference
-            "foward" for foward difference
+    model : "central" for central difference (line stencil)
+            "foward" for foward difference (line stencil)
+            "isotropic" for isotropic difference for stochastic process (square stencil) 
+                        https://arxiv.org/pdf/1705.10828.pdf
     oacc  : order of accuracy
     load_from_file : try to load precaluclated matrices
     return: the difference matrix
+    how the 2d lattice is flatted
+              x=1 x=2  x=3  x=4  x=5 (row)
+       y=1:    1    2    3    4    5
+       y=2:    5    6    7    8    9
+     (column)
+    Dx*rho ~ drho/dx, where Dx is the difference matrix
     *note that the marix if for periodic boundary. 
     *TBD : we introduce ghost layers for other boundary conditions to save the labour of 
         modifying the difference matrices, and these layers should be reset after 
@@ -71,14 +79,22 @@ function diff_mat2d(nx,ny,along,odiff,mode ="central",oacc=4,load_from_file =fal
         else
             error("oacc = 1,2,3 or 4 for forward difference, no other values allowed")
         end
+    elseif mode == "isotropic"
+        square_dx_coeff =   [-1.0/12.0  -1.0/3.0  -1.0/12.0;
+                              0.0        0.0       0.0     ;
+                              1.0/12.0   1.0/3.0   1.0/12.0]
+
+        square_dy_coeff =   [-1.0/12.0   0.0  -1.0/12.0;
+                             -1.0/3.0    0.0   1.0/3.0 ;
+                             -1.0/12.0   0.0   1.0/12.0]
     else
         error("model = central or forward, no other schemes implemented")
     end
     nrow,ncol = size(diff_coeff)
     nbrs = ncol ÷ 2         # integer division
     diff_mat = spzeros(Float64, N, N)
-    stencil_ind =  Array{Int64,1}(undef,ncol)
-
+    line_stencil_ind =  Array{Int64,1}(undef,ncol)
+    square_stencil_ind = Array{Int64,2}(undef,3,3)
     #=
     # a special case for order of accuracy = 2
     for i in 1:nx
@@ -106,28 +122,54 @@ function diff_mat2d(nx,ny,along,odiff,mode ="central",oacc=4,load_from_file =fal
     =#
     for i in 1:nx
         for j in 1:ny   
-            if along == 1 
-                stencil_ind[nbrs + 1] = i + (j-1)*nx                             # center
+            if mode == "isotropic"
+                square_stencil_ind[2,2] = i + (j-1)*nx                     # center
+                square_stencil_ind[1,2] = mod_idx(i - 1, nx) + (j-1)*nx    # left one
+                square_stencil_ind[3,2] = mod_idx(i + 1, nx) + (j-1)*nx    # right one
+                square_stencil_ind[2,1] = i + (mod_idx(j - 1, ny) - 1)*nx  # upper one
+                square_stencil_ind[2,3] = i + (mod_idx(j + 1, ny) - 1)*nx  # lower one
+                square_stencil_ind[1,1] = mod_idx(i - 1, nx) + (mod_idx(j - 1, ny) - 1)*nx  # upper left
+                square_stencil_ind[3,1] = mod_idx(i + 1, nx) + (mod_idx(j - 1, ny) - 1)*nx  # upper right
+                square_stencil_ind[1,3] = mod_idx(i - 1, nx) + (mod_idx(j - 1, ny) - 1)*nx  # lower  left
+                square_stencil_ind[3,3] = mod_idx(i + 1, nx) + (mod_idx(j - 1, ny) - 1)*nx  # lower right
+            elseif along == 1 
+                line_stencil_ind[nbrs + 1] = i + (j-1)*nx                              # center
                 for nl in 1:nbrs
-                    stencil_ind[nbrs + 1 - nl] = mod_idx(i - nl, nx) + (j-1)*nx   # the point left to the center by nl unit
+                    line_stencil_ind[nbrs + 1 - nl] = mod_idx(i - nl, nx) + (j-1)*nx   # the point left to the center by nl unit
                 end
                 for nr in 1:nbrs
-                    stencil_ind[nbrs + 1 + nr] = mod_idx(i + nr, nx) + (j-1)*nx  # right one
+                    line_stencil_ind[nbrs + 1 + nr] = mod_idx(i + nr, nx) + (j-1)*nx   # right one
                 end
             elseif along == 2
-                stencil_ind[nbrs + 1] = i + (j-1)*nx                              # center
+                line_stencil_ind[nbrs + 1] = i + (j-1)*nx                              # center
                 for nu in 1:nbrs
-                    stencil_ind[nbrs + 1 - nu] = i + (mod_idx(j - nu, ny) - 1)*nx  # the point up to the center by nu unit
+                    line_stencil_ind[nbrs + 1 - nu] = i + (mod_idx(j - nu, ny) - 1)*nx  # the point up to the center by nu unit
                 end
                 for nd in 1:nbrs
-                    stencil_ind[nbrs + 1 + nd] = i + (mod_idx(j + nd, ny) - 1)*nx # the point down to the center by nd unit
+                    line_stencil_ind[nbrs + 1 + nd] = i + (mod_idx(j + nd, ny) - 1)*nx # the point down to the center by nd unit
                 end
             else
                 error("along = 1 or 2, no other values allowed")
             end 
-            for is in 1:ncol
-                diff_mat[stencil_ind[nbrs + 1],stencil_ind[is]] = diff_coeff[odiff,is]
+            # assign the value
+            if mode == "isotropic"
+                for _i in 1:3
+                    for _j in 1:3
+                        if along == 1
+                            diff_mat[square_stencil_ind[2,2],squre_stencil_ind[_i,_j]] = square_dx_coeff[_i,_j]
+                        elseif along == 2
+                            diff_mat[square_stencil_ind[2,2],squre_stencil_ind[_i,_j]] = square_dy_coeff[_i,_j]
+                        else
+                            error("along = 1 or 2, no other values allowed")
+                        end
+                    end
+                end
+            else
+                for is in 1:ncol
+                    diff_mat[line_stencil_ind[nbrs + 1],line_stencil_ind[is]] = diff_coeff[odiff,is]
+                end
             end
+            
         end
     end
     dropzeros!(diff_mat)
@@ -146,6 +188,64 @@ function diff_mat2d(nx,ny,along,odiff,mode ="central",oacc=4,load_from_file =fal
         end
     end
     return sparse(diff_mat)
+end
+
+function laplacian_square_stencil(nx,ny,delta,mode ="isotropic_std")
+    """
+    nx,ny : the number of points in each dimension
+    model : "isotropic_std" for the standard isotropic laplacian 
+                            see PhysRevA.38.434 ,
+                            or Provatas, N., & Elder, K. Phase-field methods in materials science and engineering.
+                            or https://en.wikipedia.org/wiki/Discrete_Laplace_operator
+            "isotropic_sto" for isotropic difference for stochastic process (square stencil) 
+                            https://arxiv.org/pdf/1705.10828.pdf
+    return: the difference matrix
+    *note that the marix is for periodic boundary. 
+    *TBD : we introduce ghost layers for other boundary conditions to save the labour of 
+        modifying the difference matrices, and these layers should be reset after 
+        each iteration in time
+    """
+    N = nx*ny
+    laplacian = spzeros(Float64, N, N)
+    square_stencil_ind = Array{Int64,2}(undef,5,5)
+    std_diff_stencil = [0.0  0.0   0.0  0.0   0.0;
+                        0.0  0.25  0.5  0.25  0.0;
+                        0.0  0.5  -3.0  0.5   0.0;
+                        0.0  0.25  0.5  0.25  0.0;
+                        0.0  0.0   0.0  0.0   0.0]
+
+    sto_diff_stencil = [1.0/72.0   1.0/18.0   1.0/9.0   1.0/18.0   1.0/72.0;
+                        1.0/18.0   0.0       -1.0/9.0   0.0        1.0/18.0;
+                        1.0/9.0   -1.0/9.0   -1.0/2.0  -1.0/9.0    1.0/9.0;
+                        1.0/18.0   0.0       -1.0/9.0   0.0        1.0/18.0;
+                        1.0/72.0   1.0/18.0   1.0/9.0   1.0/18.0   1.0/72.0]
+    std_diff_stencil ./= (delta*delta)
+    sto_diff_stencil ./= (delta*delta)
+    for i in 1:nx
+        for j in 1:ny 
+
+            for dx in -2:2
+                for dy in -2:2
+                square_stencil_ind[3,3] = i + (j-1)*nx                         # center
+                square_stencil_ind[3+dx,3+dy] = mod_idx(i + dx, nx) + (mod_idx(j - dy, ny) - 1)*nx    # left one
+                end
+            end
+ 
+            # assign the value
+            for _i in 1:5
+                for _j in 1:5
+                    if mode == "isotropic_std"
+                        laplacian[square_stencil_ind[3,3],square_stencil_ind[_i,_j]] = std_diff_stencil[_i,_j]
+                    elseif mode == "isotropic_sto"
+                        laplacian[square_stencil_ind[3,3],square_stencil_ind[_i,_j]] = sto_diff_stencil[_i,_j]
+                    else
+                        error("mode for square stencil laplacian = isotropic_std or isotropic_sto")
+                    end
+                end
+            end   
+        end
+    end
+    return sparse(laplacian)
 end
 
 function mixed_diff_mat2d(mdiff::Tuple{Integer,Integer},nx,ny,dx,dy,mode="central",oacc=4)
