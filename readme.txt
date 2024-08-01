@@ -5,6 +5,7 @@ A. To run the code:
   julia --threads [N_thread] calculation.jl [data_directory]
   
   e.g julia --threads 2 calculation.jl ./data
+(or julia --threads 2 calculation_intg.jl ./data for the integro-diff eq.)
   
   
 
