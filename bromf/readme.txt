@@ -1,3 +1,5 @@
+This codebase is derived from https://github.com/guanming-zhang/Bromf, created by Guanming Zhang. The original license and copyright notices have been preserved. This version contains the implementation of finite-difference simulations of coarse-grained hydrodynamic models of pairwise, correlated random-organizing systems (random organization, biased random organization, and stochastic gradient descent) and is maintained separately.
+
 A. To run the code:
 1 write the input.json to specify the parameters and configuration
 2 move the input.json to your data directory
@@ -5,7 +7,6 @@ A. To run the code:
   julia --threads [N_thread] calculation.jl [data_directory]
   
   e.g julia --threads 2 calculation.jl ./data
-(or julia --threads 2 calculation_intg.jl ./data for the integro-diff eq.)
   
   
 
