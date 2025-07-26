@@ -135,51 +135,6 @@ input_config1 = {
   "system": "SGD"  
 }
 
-input_config2 = {
-  "range": [100.0,100.0],
-  "npts": [256,256],
-  "dt": 0.005,
-  "time_scheme": "forward-Euler",
-  "n_steps": 50000,
-  "n_save": 500,
-  "bc": "periodic",
-  "iv": "random-normal",
-  "iv_srho": 0.1,
-  "N": 10000,
-  "R": 1.0,
-  "D": 0.01,
-  "T": 0.0,
-  "Gamma_inv": 1.0,
-  "compression": 1,
-  "rel_epsilon": 0.001
-}
-
-input_config3 = {
-  "range": [100.0,100.0],
-  "npts": [256,256],
-  "dt": 2e-6,
-  "time_scheme": "predictor-corrector",
-  "n_steps": 80000,
-  "n_save": 200,
-  "bc": "periodic",
-  "iv": "coarse-grain",
-  "iv_rel_window": 4.0,
-  "N":10000,
-  "phi":0.1,
-  "Gamma_inv": 1.0,
-  "compression": 1
-}
-
-# comp_config = {
-#     "NTHREADS":"1",
-#     "CONDA_ENV":"julia_env",
-#     "JULIA_EXE":"../bromf/calculation_intg.jl",
-#     "PLOT_EXE1":"../bromf/plot.jl",
-#     "PLOT_EXE2":"../bromf/plot_all.jl",
-#     "MEMORY":"16GB",
-#     "TIME":"20:00:00"
-# }
-
 comp_config = {
     "NTHREADS":"1",
     "CONDA_ENV":"julia_env",
@@ -197,22 +152,8 @@ input_config1["n_steps"] = 1000
 input_config1["n_save"] = 10
 input_config1["R"] =  1.0
 input_config1["iv_srho"] = 0.01
-input_config1["dt"] =  0.01          #0.005
+input_config1["dt"] =  0.01          
 input_config1["iv"] = "random-normal"
-# input_config1["N"] = 4000
-# input_config1["rel_epsilon"] = 0.01
-# input_config1["T"] = 0.1
-
-# input_config1["npts"] = [512,512]
-# input_config1["range"] = [100.0,100.0]
-
-# input_config1["npts"] = [256,256]
-# input_config1["range"] = [50.0,50.0]
-
-# # #smaller value of R/dx
-# input_config1["npts"] = [256,256]
-# input_config1["range"] = [100.0,100.0]
-
 input_config1["npts"] = [512,512]
 input_config1["range"] = [200.0,200.0]
 

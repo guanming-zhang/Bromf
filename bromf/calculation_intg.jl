@@ -1,6 +1,3 @@
-# include("./src/mean_field_model_integral_no_malloc.jl")
-# include("./src/mean_field_model_integral_no_malloc_new_pot.jl")
-# include("./src/mean_field_model_integral_no_malloc_pairwise.jl")
 include("./src/mean_field_model_integral_no_malloc_pairwise_cons_COM.jl")
 
 include("./src/utils.jl")

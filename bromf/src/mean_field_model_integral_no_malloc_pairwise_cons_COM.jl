@@ -225,15 +225,6 @@ function gen_noise_matrix!(model::NumericalMeanField2D)
                                 model.noise_matrix[alpha,mod_idx(i+rel_x,nx),mod_idx(j+rel_y,ny),idx_center_x-rel_x,idx_center_y-rel_y] = -1.0*model.noise_matrix[alpha,i,j,ix,iy]
                             end
                         end
-
-                        # for alpha in 1:2
-                        #     if ((r <= 2*model.params["R"]) && (ix != idx_center_x || iy != idx_center_y))
-                        #         # if ix == idx_center_x and iy == idx_center_y then x==y==0
-                        # model.noise_matrix[alpha,mod_idx(i+rel_x,nx),mod_idx(j+rel_y,ny),idx_center_x-rel_x,idx_center_y-rel_y] = -1.0*model.noise_matrix[alpha,i,j,ix,iy]
-                        #     else
-                        #         model.noise_matrix[alpha,i,j,ix,iy] = 0.0
-                        #     end
-                        # end
                     end
                 end
             end
@@ -264,15 +255,6 @@ function gen_noise_matrix!(model::NumericalMeanField2D)
                                 model.noise_matrix[alpha,mod_idx(i+rel_x,nx),mod_idx(j+rel_y,ny),idx_center_x-rel_x,idx_center_y-rel_y] = sample[2]
                             end
                         end
-
-                        # for alpha in 1:2
-                        #     if ((r <= 2*model.params["R"]) && (ix != idx_center_x || iy != idx_center_y))
-                        #         # if ix == idx_center_x and iy == idx_center_y then x==y==0
-                        # model.noise_matrix[alpha,mod_idx(i+rel_x,nx),mod_idx(j+rel_y,ny),idx_center_x-rel_x,idx_center_y-rel_y] = -1.0*model.noise_matrix[alpha,i,j,ix,iy]
-                        #     else
-                        #         model.noise_matrix[alpha,i,j,ix,iy] = 0.0
-                        #     end
-                        # end
                     end
                 end
             end
@@ -664,23 +646,6 @@ function one_step(model::NumericalMeanField2D, p, p_i)
             model.t -= model.dt
             model.dt = model.dt/1.1
         end
-
-        # #keeping rho bounded by local averaging with 4 nearest-neighbours
-        # rho = reshape(model.rho,(model.npts[1],model.npts[2]))
-
-        # for i in 1:model.npts[1]*model.npts[2]
-        #     ix = mod_idx(i,model.npts[1]) 
-        #     iy = div(i - ix,model.npts[1]) + 1
-
-        #     if model.rho[i] < 0.0 || model.rho[i] > 100.0
-        #         rho[ix,iy] = (1.0/4.0)*(rho[mod_idx(ix-1,model.npts[1]),mod_idx(iy,model.npts[2])] + 
-        #                                 rho[mod_idx(ix,model.npts[1]),mod_idx(iy-1,model.npts[2])] + 
-        #                                 rho[mod_idx(ix+1,model.npts[1]),mod_idx(iy,model.npts[2])] +
-        #                                 rho[mod_idx(ix,model.npts[1]),mod_idx(iy+1,model.npts[2])])
-        #     end
-        # end
-        # model.rho = reshape(rho,model.npts[1]*model.npts[2])
-
 
     else
         error("one_step() only works for time-scheme = 

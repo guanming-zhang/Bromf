@@ -1,1 +1,0 @@
-singularity exec --bind /home/sa7483/julia-1.10.2/compiled:/ext3/pkgs/compiled --bind /home/sa7483/julia-1.10.2/logs:/ext3/pkgs/logs --overlay /home/sa7483/julia-1.10.2/julia-1.10.2.ext3:rw /scratch/work/public/singularity/cuda11.7.99-cudnn8.5-devel-ubuntu22.04.2.sif /bin/bash -c
