@@ -1,4 +1,4 @@
-This codebase is derived from https://github.com/guanming-zhang/Bromf, created by Guanming Zhang. The original license and copyright notices have been preserved. This version contains the implementation of finite-difference simulations of coarse-grained field theory of pairwise, correlated random-organizing systems (random organization, biased random organization, and stochastic gradient descent) and is maintained separately.
+This codebase is derived from https://github.com/guanming-zhang/Bromf, created by Guanming Zhang. The original license and copyright notices have been preserved. This version contains the implementation of finite-difference simulations of coarse-grained field theory of pairwise, correlated random-organizing systems (random organization, biased random organization, and stochastic gradient descent).
 
 A. To run the code:
 
