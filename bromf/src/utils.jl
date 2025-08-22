@@ -1,5 +1,7 @@
 using JSON
 using FFTW
+using LinearAlgebra
+using Statistics
 mutable struct DataLoader
     data_root_dir::String
     info::Dict{String,Any}
@@ -67,20 +69,29 @@ function read_input(file_str)
 end
 
 ####### ------- data analysis ------- #####
-function get_structure_factor(rho,nx,ny,Lx,Ly)
+function get_structure_factor(rho,nx,ny,Lx,Ly,N)
     if ndims(rho) == 1
         rho = reshape(rho,(nx,ny))
     end
-    v = sum(rho)
+    # v = sum(rho)
+    # # remove the mean value 
+    # rho = (rho .- v/(nx*ny))
+    # f_rho = fftshift(fft(rho))
+    # # normalised structure factor
+    # s_rho = real(f_rho.*conj(f_rho))/v
+
     # remove the mean value 
-    rho = (rho .- v/(nx*ny))
+    rho = rho .- (N/(Lx*Ly))
     f_rho = fftshift(fft(rho))
     # normalised structure factor
-    s_rho = real(f_rho.*conj(f_rho))/v
+    s_rho = (real(f_rho.*conj(f_rho)))/(nx*ny*var(rho))
+    # s_rho = (real(f_rho.*conj(f_rho)))/(nx*ny)
+
     # original frequence 1..N+1 is mapped to 0 to 2pi
     # only N points are outputed since fft[1] and fft[N+1] are the same
     kx = fftshift(fftfreq(nx,nx))*2.0*pi/Lx
     ky = fftshift(fftfreq(ny,ny))*2.0*pi/Ly
+
     return (kx,ky,s_rho)
 end
 
@@ -91,7 +102,8 @@ function get_radial_structure_factor(kx,ky,s_rho,n_bins=0,cut_off = 0.707)
     if n_bins == 0
         n_bins = trunc(Int,sqrt(nx*ny)*0.5)
     end
-    n_bins = trunc(Int,n_bins*cut_off + 0.5)
+    # n_bins = trunc(Int,n_bins*cut_off + 0.5)
+    n_bins = trunc(Int,(n_bins*cut_off + 0.5)/2.0)
     delta_k = k_max/n_bins
     dA = (kx[2]-kx[1])*(ky[2]-ky[1])
     s_k = zeros(Float64,n_bins)
@@ -114,6 +126,35 @@ function get_radial_structure_factor(kx,ky,s_rho,n_bins=0,cut_off = 0.707)
     k = collect(0.5*delta_k:delta_k:k_max)
     return (k,s_k)
 end
+
+#new binning for radial structure factor
+function get_radial_profile(data, center=nothing, rm_npts=1)
+    ndim = ndims(data)
+    R = div(size(data, 1), 2)
+    if center === nothing
+        center = size(data) ./ 2
+    end
+    center = collect(center)  # Convert center to an array
+    for i in 1:ndim
+        center = reshape(center, :, 1)
+    end
+    idx = [collect(axes(data, i)) for i in 1:ndim]
+    idx = Iterators.product(idx...)
+    r = [sqrt(sum((collect(i) .- center).^2)) for i in idx]
+    r = round.(Int, r)
+    r = [if ri <= R ri else R+1 end for ri in r]
+    tbin = zeros(maximum(r) + 1)
+    nr = zeros(maximum(r) + 1)
+    for (ri, di) in zip(r, data)
+        tbin[ri + 1] += di
+        nr[ri + 1] += 1
+    end
+    radialprofile = tbin ./ nr
+    unique_r = unique(r)
+    return sort!(unique_r[rm_npts:end-1]), radialprofile[rm_npts:end-1]
+end
+
+
 
 function get_radial_cross_corr(rho,nx,ny,Lx,Ly,n_bins = 0)
     if ndims(rho) == 1
